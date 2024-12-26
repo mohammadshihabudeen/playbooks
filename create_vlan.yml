@@ -1,0 +1,13 @@
+---
+- name: Create VLANs on switches
+  hosts: switch
+  gather_facts: no
+  tasks:
+    - name: Create VLAN
+      cisco.ios.ios_config:
+        lines:
+          - "vlan {{ item.vlan_id }}"
+          - "name {{ item.name }}"
+        parents: []
+      loop: "{{ vlans }}"
+ 
