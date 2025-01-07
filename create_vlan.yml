@@ -1,6 +1,6 @@
 ---
 - name: Create VLANs on switches
-  hosts: 192.168.17.2
+  hosts: switch
   gather_facts: no
   tasks:
     - name: Create VLAN
