@@ -25,14 +25,15 @@ def execute_command(ssh, command):
 
 
 def parse_interfaces_descriptions(output):
-    """Parse 'show interfaces descriptions' to find all up links."""
-    active_interfaces = []
+    """Parse 'show interfaces descriptions' to find interfaces and their statuses."""
+    interfaces = {}
     lines = output.splitlines()
     for line in lines[1:]:  # Skip header line
         parts = line.split()
-        if len(parts) >= 4 and parts[1].lower() == "up" and parts[2].lower() == "up":
-            active_interfaces.append(parts[0])  # Interface name
-    return active_interfaces
+        if len(parts) >= 4:
+            interface, admin_status, link_status = parts[0], parts[1].lower(), parts[2].lower()
+            interfaces[interface] = (admin_status == "up" and link_status == "up")
+    return interfaces
 
 
 def parse_lldp_neighbors(output):
@@ -58,15 +59,6 @@ def main():
     password = getpass.getpass("Enter your password: ")
     target_device = input("Enter switch hostname: ")
 
-    pre_check_commands = [
-        "show ethernet-switching table",
-        "show version",
-        "show interfaces terse",
-        "show interfaces descriptions",
-        "show lldp neighbors",
-        "show virtual-chassis"
-    ]
-
     # Step 1: Check Uplinks on the Switch
     ssh = establish_ssh_connection(target_device, username, password)
     if not ssh:
@@ -80,7 +72,7 @@ def main():
         print("Error in fetching interface descriptions. Exiting.")
         ssh.close()
         return
-    active_links = parse_interfaces_descriptions(interface_output)
+    interfaces_status = parse_interfaces_descriptions(interface_output)
 
     # Execute and parse 'show lldp neighbors'
     lldp_output, lldp_error = execute_command(ssh, "show lldp neighbors")
@@ -92,7 +84,7 @@ def main():
 
     # Determine total and active uplinks
     total_uplinks = len(uplink_interfaces)
-    active_uplinks = len([intf for intf in uplink_interfaces if intf in active_links])
+    active_uplinks = len([intf for intf in uplink_interfaces if interfaces_status.get(intf, False)])
 
     print(f"Total uplinks: {total_uplinks}, Active uplinks: {active_uplinks}")
 
@@ -103,6 +95,14 @@ def main():
 
     # Step 2: Pre-Checks on the Switch
     print("Performing pre-checks on the switch...")
+    pre_check_commands = [
+        "show ethernet-switching table",
+        "show version",
+        "show interfaces terse",
+        "show interfaces descriptions",
+        "show lldp neighbors",
+        "show virtual-chassis"
+    ]
     pre_check_output = ""
     for command in pre_check_commands:
         output, error = execute_command(ssh, command)
