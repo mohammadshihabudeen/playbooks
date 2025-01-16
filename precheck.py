@@ -1,5 +1,6 @@
 import getpass
 import time
+import re
 import paramiko
 
 
@@ -24,15 +25,21 @@ def execute_command(ssh, command):
     return stdout.read().decode('utf-8'), stderr.read().decode('utf-8')
 
 
-def parse_interfaces_descriptions(output):
-    """Parse 'show interfaces descriptions' to find interfaces and their statuses."""
+def parse_interfaces_descriptions(output, regex_pattern):
+    """Parse 'show interfaces descriptions' to find all links and their statuses."""
     interfaces = {}
     lines = output.splitlines()
     for line in lines[1:]:  # Skip header line
         parts = line.split()
         if len(parts) >= 4:
-            interface, admin_status, link_status = parts[0], parts[1].lower(), parts[2].lower()
-            interfaces[interface] = (admin_status == "up" and link_status == "up")
+            interface, admin_status, link_status, description = parts[0], parts[1].lower(), parts[2].lower(), parts[3]
+            is_uplink = re.search(regex_pattern, description) is not None
+            interfaces[interface] = {
+                "admin_up": admin_status == "up",
+                "link_up": link_status == "up",
+                "is_uplink": is_uplink,
+                "description": description
+            }
     return interfaces
 
 
@@ -59,12 +66,15 @@ def main():
     password = getpass.getpass("Enter your password: ")
     target_device = input("Enter switch hostname: ")
 
-    # Step 1: Check Uplinks on the Switch
+    # Regex pattern to identify uplinks in the description
+    uplink_regex = r"corp-cr"
+
+    # Step 1: Establish SSH connection
     ssh = establish_ssh_connection(target_device, username, password)
     if not ssh:
         return
 
-    print("Checking uplinks on the switch...")
+    print("Fetching interface descriptions...")
 
     # Execute and parse 'show interfaces descriptions'
     interface_output, interface_error = execute_command(ssh, "show interfaces descriptions")
@@ -72,28 +82,43 @@ def main():
         print("Error in fetching interface descriptions. Exiting.")
         ssh.close()
         return
-    interfaces_status = parse_interfaces_descriptions(interface_output)
+    interfaces_status = parse_interfaces_descriptions(interface_output, uplink_regex)
 
+    print("Fetching LLDP neighbors...")
     # Execute and parse 'show lldp neighbors'
     lldp_output, lldp_error = execute_command(ssh, "show lldp neighbors")
     if "error" in lldp_error.lower():
         print("Error in fetching LLDP neighbors. Exiting.")
         ssh.close()
         return
-    uplink_interfaces = parse_lldp_neighbors(lldp_output)
+    lldp_interfaces = parse_lldp_neighbors(lldp_output)
 
-    # Determine total and active uplinks
-    total_uplinks = len(uplink_interfaces)
-    active_uplinks = len([intf for intf in uplink_interfaces if interfaces_status.get(intf, False)])
+    # Step 2: Analyze uplinks
+    total_links = len(interfaces_status)
+    uplink_candidates = [intf for intf, details in interfaces_status.items() if details["is_uplink"]]
+    active_uplinks = [intf for intf in uplink_candidates if interfaces_status[intf]["link_up"]]
 
-    print(f"Total uplinks: {total_uplinks}, Active uplinks: {active_uplinks}")
+    # Confirm uplinks via LLDP
+    confirmed_uplinks = [intf for intf in active_uplinks if intf in lldp_interfaces]
 
-    if input("Are the uplink statuses satisfactory? Type 'Yes' to proceed: ").strip().lower() != "yes":
+    print(f"Total links: {total_links}")
+    print(f"Total potential uplinks (matching description): {len(uplink_candidates)}")
+    print(f"Active uplinks: {len(active_uplinks)}")
+    print(f"Confirmed uplinks via LLDP: {len(confirmed_uplinks)}")
+
+    print("\nDetails of Uplinks:")
+    for intf in uplink_candidates:
+        status = "Active" if interfaces_status[intf]["link_up"] else "Inactive"
+        confirmation = "Confirmed" if intf in confirmed_uplinks else "Unconfirmed"
+        description = interfaces_status[intf]["description"]
+        print(f"Interface: {intf}, Status: {status}, LLDP: {confirmation}, Description: {description}")
+
+    if input("\nAre the uplink statuses satisfactory? Type 'Yes' to proceed: ").strip().lower() != "yes":
         print("Exiting. Resolve issues before retrying.")
         ssh.close()
         return
 
-    # Step 2: Pre-Checks on the Switch
+    # Step 3: Pre-Checks
     print("Performing pre-checks on the switch...")
     pre_check_commands = [
         "show ethernet-switching table",
@@ -107,10 +132,6 @@ def main():
     for command in pre_check_commands:
         output, error = execute_command(ssh, command)
         pre_check_output += f"Command: {command}\n{output}\n{'-'*50}\n"
-
-        # Include uplink details if 'show lldp neighbors' is the command
-        if command == "show lldp neighbors":
-            pre_check_output += f"Total uplinks: {total_uplinks}\nActive uplinks: {active_uplinks}\n{'-'*50}\n"
 
     save_output_to_file("pre_check.txt", pre_check_output)
     print("Pre-checks completed and saved to pre_check.txt.")
