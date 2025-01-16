@@ -1,9 +1,11 @@
 import getpass
 import re
-import time
 import subprocess
+import time
+
 import paramiko
 from scp import SCPClient
+
 
 def establish_ssh_connection(hostname, username, password):
     """Establish an SSH connection to the device."""
@@ -64,7 +66,7 @@ def main():
     print("Performing post-checks on the target device...")
     post_check_output = ""
     for command in pre_check_commands:
-        output, error = execute_command(ssh_target, command)
+        output, error = execute_command(ssh, command)
         post_check_output += f"Command: {command}\n{output}\n{'-'*50}\n"
     save_output_to_file("post_check.txt", post_check_output)
     print("Post-checks completed and saved to post_check.txt.")
