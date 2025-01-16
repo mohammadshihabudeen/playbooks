@@ -1,7 +1,9 @@
 import getpass
-import time
 import re
+import time
+
 import paramiko
+from scp import SCPClient
 
 
 def establish_ssh_connection(hostname, username, password):
@@ -59,12 +61,23 @@ def save_output_to_file(filename, output):
     with open(filename, 'w') as file:
         file.write(output)
 
-
+def copy_firmware(ssh, firmware, destination):
+    """Copy firmware to the device."""
+    try:
+        with SCPClient(ssh.get_transport()) as scp:
+            print(f"Copying {firmware} to {destination}...")
+            scp.put(firmware, destination)
+            print(f"Successfully copied {firmware}.")
+    except Exception as e:
+        print(f"Failed to copy {firmware}: {e}")
+        
 def main():
     # Input details
     username = input("Enter your username: ")
     password = getpass.getpass("Enter your password: ")
     target_device = input("Enter switch hostname: ")
+    firmware_list = input("Enter firmware list (comma-separated): ").split(',')
+
 
     # Regex pattern to identify uplinks in the description
     uplink_regex = r"corp-cr"
@@ -138,7 +151,28 @@ def main():
 
     ssh.close()
     print("Process completed successfully.")
-
+    
+    # Step 4: Verify Firmware Availability and Upgrade
+    for firmware in firmware_list:
+        firmware = firmware.strip()
+        print(f"Checking if {firmware} exists on the target device...")
+        output, error = execute_command(ssh_target, f"ls /var/tmp/{firmware}")
+        if "No such file" in error:
+            print(f"{firmware} not found on the target device. Copying it from the corpjump server...")
+            copy_firmware(ssh_target, firmware, "/var/tmp/")
+        else:
+            print(f"{firmware} already exists on the target device.")
+        
+        # Start Upgrade Process
+        print(f"Starting upgrade with {firmware}...")
+        output, error = execute_command(ssh_target, f"request system software add /var/tmp/{firmware}")
+        print(output)
+        if "error" in error.lower():
+            print(f"Upgrade failed for {firmware}. Exiting.")
+            ssh_target.close()
+            return
+        print(f"Upgrade with {firmware} completed. Rebooting...")
+        execute_command(ssh_target, "request system reboot")
 
 if __name__ == "__main__":
     main()
