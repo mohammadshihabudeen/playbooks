@@ -43,8 +43,7 @@ def main():
     # Input details
     username = input("Enter your username: ")
     password = getpass.getpass("Enter your password: ")
-    redundant_device = input("Enter redundant device hostname: ")
-    target_device = input("Enter target upgrade device hostname: ")
+    target_device = input("Enter switch hostname: ")
 
     pre_check_commands = [
         "show ethernet-switching table",
@@ -55,47 +54,42 @@ def main():
         "show virtual-chassis"
     ]
 
-    # Step 1: Check Redundant Device (LLDP Neighbors and Uplinks)
-    ssh_redundant = establish_ssh_connection(redundant_device, username, password)
-    if not ssh_redundant:
+    # Step 1: Check Uplinks on the Switch
+    ssh = establish_ssh_connection(target_device, username, password)
+    if not ssh:
         return
-    print("Checking redundant device LLDP neighbors...")
-    output, error = execute_command(ssh_redundant, "show lldp neighbors")
+    print("Checking uplinks on the switch...")
+    output, error = execute_command(ssh, "show lldp neighbors")
     if "error" in error.lower():
-        print("Error in checking redundant device LLDP neighbors. Exiting.")
-        ssh_redundant.close()
+        print("Error in checking uplinks. Exiting.")
+        ssh.close()
         return
-    print("Redundant device LLDP neighbors:\n", output)
+    print("LLDP neighbors:\n", output)
 
     # Count uplinks and active uplinks
     total_uplinks, active_uplinks = count_uplinks(output)
     print(f"Total uplinks: {total_uplinks}, Active uplinks: {active_uplinks}")
 
-    ssh_redundant.close()
-
     if input("Are the uplink statuses satisfactory? Type 'Yes' to proceed: ").strip().lower() != "yes":
         print("Exiting. Resolve issues before retrying.")
+        ssh.close()
         return
 
-    # Step 2: Pre-Checks on Target Device
-    ssh_target = establish_ssh_connection(target_device, username, password)
-    if not ssh_target:
-        return
-    print("Performing pre-checks on the target device...")
+    # Step 2: Pre-Checks on the Switch
+    print("Performing pre-checks on the switch...")
     pre_check_output = ""
     for command in pre_check_commands:
-        output, error = execute_command(ssh_target, command)
+        output, error = execute_command(ssh, command)
         pre_check_output += f"Command: {command}\n{output}\n{'-'*50}\n"
 
-        # For "show lldp neighbors" command, count uplinks and active uplinks
+        # For "show lldp neighbors" command, add uplink details
         if command == "show lldp neighbors":
-            total_uplinks, active_uplinks = count_uplinks(output)
             pre_check_output += f"Total uplinks: {total_uplinks}\nActive uplinks: {active_uplinks}\n{'-'*50}\n"
 
     save_output_to_file("pre_check.txt", pre_check_output)
     print("Pre-checks completed and saved to pre_check.txt.")
 
-    ssh_target.close()
+    ssh.close()
     print("Process completed successfully.")
 
 
