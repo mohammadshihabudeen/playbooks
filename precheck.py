@@ -1,10 +1,9 @@
 import getpass
 import re
 import time
-
+import subprocess
 import paramiko
 from scp import SCPClient
-
 
 def establish_ssh_connection(hostname, username, password):
     """Establish an SSH connection to the device."""
@@ -61,6 +60,7 @@ def save_output_to_file(filename, output):
     with open(filename, 'w') as file:
         file.write(output)
 
+
 def copy_firmware(ssh, firmware, destination):
     """Copy firmware to the device."""
     try:
@@ -71,13 +71,31 @@ def copy_firmware(ssh, firmware, destination):
     except Exception as e:
         print(f"Failed to copy {firmware}: {e}")
         
+
+def is_device_pingable(hostname):
+    """Ping the device to check if it's reachable."""
+    try:
+        # Ping the device with 1 packet, and timeout after 3 seconds
+        response = subprocess.run(
+            ['ping', '-c', '1', '-W', '3', hostname],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        if response.returncode == 0:
+            return True
+        else:
+            return False
+    except Exception as e:
+        print(f"Error during pinging: {e}")
+        return False
+
+
 def main():
     # Input details
     username = input("Enter your username: ")
     password = getpass.getpass("Enter your password: ")
     target_device = input("Enter switch hostname: ")
     firmware_list = input("Enter firmware list (comma-separated): ").split(',')
-
 
     # Regex pattern to identify uplinks in the description
     uplink_regex = r"corp-cr"
@@ -156,23 +174,37 @@ def main():
     for firmware in firmware_list:
         firmware = firmware.strip()
         print(f"Checking if {firmware} exists on the target device...")
-        output, error = execute_command(ssh_target, f"ls /var/tmp/{firmware}")
+        output, error = execute_command(ssh, f"ls /var/tmp/{firmware}")
         if "No such file" in error:
             print(f"{firmware} not found on the target device. Copying it from the corpjump server...")
-            copy_firmware(ssh_target, firmware, "/var/tmp/")
+            copy_firmware(ssh, firmware, "/var/tmp/")
         else:
             print(f"{firmware} already exists on the target device.")
         
         # Start Upgrade Process
         print(f"Starting upgrade with {firmware}...")
-        output, error = execute_command(ssh_target, f"request system software add /var/tmp/{firmware}")
+        output, error = execute_command(ssh, f"request system software add /var/tmp/{firmware}")
         print(output)
         if "error" in error.lower():
             print(f"Upgrade failed for {firmware}. Exiting.")
-            ssh_target.close()
+            ssh.close()
             return
         print(f"Upgrade with {firmware} completed. Rebooting...")
-        execute_command(ssh_target, "request system reboot")
+        execute_command(ssh, "request system reboot")
+
+    ssh.close()  # Close SSH session before waiting for device to reboot
+
+    # Step 5: Wait for system to come online
+    print(f"Waiting for {target_device} to come back online...")
+
+    while not is_device_pingable(target_device):
+        print("Waiting for the device to respond to ping...")
+        time.sleep(10)  # Wait for 10 seconds before retrying
+
+    print(f"{target_device} is now online and pingable!")
+
+    # Notify the user that the device is ready
+    print(f"The device {target_device} is now ready and pingable. You can proceed with further tasks.")
 
 if __name__ == "__main__":
     main()
