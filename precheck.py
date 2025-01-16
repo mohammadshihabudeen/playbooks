@@ -1,6 +1,5 @@
 import getpass
 import time
-
 import paramiko
 
 
@@ -25,12 +24,26 @@ def execute_command(ssh, command):
     return stdout.read().decode('utf-8'), stderr.read().decode('utf-8')
 
 
-def count_uplinks(output):
-    """Count total and active uplinks from LLDP neighbors output."""
+def parse_interfaces_descriptions(output):
+    """Parse 'show interfaces descriptions' to find all up links."""
+    active_interfaces = []
     lines = output.splitlines()
-    total_uplinks = len([line for line in lines if "et-" in line or "ge-" in line])  # Adjust pattern if needed
-    active_uplinks = len([line for line in lines if "et-" in line or "ge-" in line and "Up" in line])  # Adjust pattern
-    return total_uplinks, active_uplinks
+    for line in lines[1:]:  # Skip header line
+        parts = line.split()
+        if len(parts) >= 4 and parts[1].lower() == "up" and parts[2].lower() == "up":
+            active_interfaces.append(parts[0])  # Interface name
+    return active_interfaces
+
+
+def parse_lldp_neighbors(output):
+    """Parse 'show lldp neighbors' to find uplink interfaces."""
+    uplink_interfaces = []
+    lines = output.splitlines()
+    for line in lines[1:]:  # Skip header line
+        parts = line.split()
+        if len(parts) >= 2:
+            uplink_interfaces.append(parts[0])  # Local Interface
+    return uplink_interfaces
 
 
 def save_output_to_file(filename, output):
@@ -58,16 +71,29 @@ def main():
     ssh = establish_ssh_connection(target_device, username, password)
     if not ssh:
         return
+
     print("Checking uplinks on the switch...")
-    output, error = execute_command(ssh, "show lldp neighbors")
-    if "error" in error.lower():
-        print("Error in checking uplinks. Exiting.")
+
+    # Execute and parse 'show interfaces descriptions'
+    interface_output, interface_error = execute_command(ssh, "show interfaces descriptions")
+    if "error" in interface_error.lower():
+        print("Error in fetching interface descriptions. Exiting.")
         ssh.close()
         return
-    print("LLDP neighbors:\n", output)
+    active_links = parse_interfaces_descriptions(interface_output)
 
-    # Count uplinks and active uplinks
-    total_uplinks, active_uplinks = count_uplinks(output)
+    # Execute and parse 'show lldp neighbors'
+    lldp_output, lldp_error = execute_command(ssh, "show lldp neighbors")
+    if "error" in lldp_error.lower():
+        print("Error in fetching LLDP neighbors. Exiting.")
+        ssh.close()
+        return
+    uplink_interfaces = parse_lldp_neighbors(lldp_output)
+
+    # Determine total and active uplinks
+    total_uplinks = len(uplink_interfaces)
+    active_uplinks = len([intf for intf in uplink_interfaces if intf in active_links])
+
     print(f"Total uplinks: {total_uplinks}, Active uplinks: {active_uplinks}")
 
     if input("Are the uplink statuses satisfactory? Type 'Yes' to proceed: ").strip().lower() != "yes":
@@ -82,7 +108,7 @@ def main():
         output, error = execute_command(ssh, command)
         pre_check_output += f"Command: {command}\n{output}\n{'-'*50}\n"
 
-        # For "show lldp neighbors" command, add uplink details
+        # Include uplink details if 'show lldp neighbors' is the command
         if command == "show lldp neighbors":
             pre_check_output += f"Total uplinks: {total_uplinks}\nActive uplinks: {active_uplinks}\n{'-'*50}\n"
 
