@@ -2,6 +2,7 @@ import getpass
 import re
 import subprocess
 import time
+
 import paramiko
 from scp import SCPClient
 
@@ -83,25 +84,22 @@ def is_device_pingable(hostname):
         print(f"Error during pinging: {e}")
         return False
 
-def extract_version_info(file_content):
-    """Extract JUNOS version information from the file content."""
-    version_data = []
-    capture = False
-    for line in file_content.splitlines():
-        if "Junos:" in line:
-            capture = True
-        elif "Command:" in line:
-            capture = False
-        if capture:
-            version_data.append(line.strip())
-    return version_data
+def extract_info(file_content):
+    """Extract all relevant information from the file content."""
+    return file_content.splitlines()
 
-def compare_versions(pre_data, post_data):
-    """Compare pre-check and post-check version data."""
+def compare_files(pre_data, post_data):
+    """Compare pre-check and post-check data."""
     changes = []
-    for pre_line, post_line in zip(pre_data, post_data):
+    max_lines = max(len(pre_data), len(post_data))
+
+    for i in range(max_lines):
+        pre_line = pre_data[i] if i < len(pre_data) else ""
+        post_line = post_data[i] if i < len(post_data) else ""
+        
         if pre_line != post_line:
             changes.append((pre_line, post_line))
+    
     return changes
 
 def wrap_text(text, width):
@@ -260,9 +258,9 @@ def main():
 
     #STEP 5
     print("Comparing pre-check and post-check data...")
-    pre_version_data = extract_version_info(pre_check_output)
-    post_version_data = extract_version_info(post_check_output)
-    version_changes = compare_versions(pre_version_data, post_version_data)
+    pre_version_data = extract_info(pre_check_output)
+    post_version_data = extract_info(post_check_output)
+    version_changes = compare_files(pre_version_data, post_version_data)
     save_table_to_file(version_changes, "version_comparison.txt")
 
     print("Upgrade process completed successfully.")
