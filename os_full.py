@@ -224,31 +224,27 @@ def main():
         output, error = execute_command(ssh, f"file list /var/tmp/{firmware}")
         if "No such file" in output:
             print(f"{firmware} not found on the target device. Copying it from the corpjump server...")
-            #copy_firmware(ssh, firmware, "/var/tmp/")
+            copy_firmware(ssh, firmware, "/var/tmp/")
         else:
             print(f"{firmware} already exists on the target device.")
         
         print(f"Starting upgrade with {firmware}...")
-        #output, error = execute_command(ssh, f"request system software add /var/tmp/{firmware}")
+        output, error = execute_command(ssh, f"request system software add /var/tmp/{firmware}")
         print(output)
         if "error" in error.lower():
             print(f"Upgrade failed for {firmware}. Exiting.")
             ssh.close()
             return
         print(f"Upgrade with {firmware} completed. Rebooting...")
-        #execute_command(ssh, "request system reboot")
-
-    ssh.close()
-
-    print(f"Waiting for {target_device} to come back online...")
-    time.sleep(30)
-    while not is_device_pingable(target_device):
-        print("Device is not reachable. Retrying in 30 seconds...")
+        execute_command(ssh, "request system reboot")
+        ssh.close()
+        print(f"Waiting for {target_device} to come back online...")
         time.sleep(30)
-
-    print(f"{target_device} is back online. Performing post-checks...")
-
-    ssh = establish_ssh_connection(target_device, username, password)
+        while not is_device_pingable(target_device):
+            print("Device is not reachable. Retrying in 30 seconds...")
+            time.sleep(30)
+        print(f"{target_device} is back online. Performing post-checks...")
+        ssh = establish_ssh_connection(target_device, username, password)
     if not ssh:
         print("Unable to reconnect to the device. Exiting.")
         return
