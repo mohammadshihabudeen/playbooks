@@ -247,7 +247,7 @@ def main():
         execute_command(ssh, "request system reboot")
         ssh.close()
         print(f"Waiting for {target_device} to come back online...")
-        time.sleep(30)
+        time.sleep(300)
         while not is_device_pingable(target_device):
             print("Device is not reachable. Retrying in 30 seconds...")
             time.sleep(30)
