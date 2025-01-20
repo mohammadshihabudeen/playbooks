@@ -227,7 +227,7 @@ def main():
             print(f"{firmware} already exists on the target device.")
         
         print(f"Starting upgrade with {firmware}...")
-        output, error = execute_command(ssh, f"request system software add /var/tmp/{firmware}")
+        output, error = execute_command(ssh, f"request system software add /var/tmp/{firmware} no-validate")
         print(output)
         if "error" in error.lower():
             print(f"Upgrade failed for {firmware}. Exiting.")
