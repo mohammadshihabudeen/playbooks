@@ -31,7 +31,7 @@ def parse_interfaces_descriptions(output, regex_pattern):
     for line in lines[1:]:  # Skip header line
         parts = line.split()
         interface = parts[0]
-        admin_status = parts[1].lower() if len(parts) > 1 and parts[1] else ""
+        admin_status = parts[1].lower() if len(parts) > 2 and parts[1] else ""
         link_status = parts[2].lower() if len(parts) > 2 and parts[2] else ""
         description = parts[-1]
         is_uplink = re.search(regex_pattern, description) is not None
