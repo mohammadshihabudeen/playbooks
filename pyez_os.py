@@ -2,6 +2,7 @@ import getpass
 import re
 import time
 from jnpr.junos import Device
+from jnpr.junos.utils.scp import SCP
 from jnpr.junos.utils.fs import FS
 from jnpr.junos.utils.sw import SW
 from jnpr.junos.exception import ConnectError
@@ -21,7 +22,7 @@ def establish_ssh_connection(hostname, username, password):
 def execute_command(dev, command):
     """Execute a CLI command on the device and return output."""
     try:
-        output = dev.cli(command, format="text",warning = False)
+        output = dev.cli(command, format="text")
         return output, None
     except Exception as e:
         return None, str(e)
@@ -52,20 +53,24 @@ def save_output_to_file(filename, output):
 
 def copy_firmware(dev, firmware_path, destination):
     """Copy firmware to the device using PyEZ FileSystem."""
-    try:
-        fs = FS(dev)
-        fs.cp(firmware_path, destination)
-        print(f"Firmware {firmware_path} copied to {destination}.")
+    try:    
+        print(f"Checking if {firmware_path} exists on the target device...")
+        output, error = execute_command(dev, f"file list /var/tmp/{firmware_path}")
+        if "No such file" in output:
+            print(f"{firmware_path} not found on the target device. Copying it from the corpjump server...")
+            with SCP(dev, progress=True) as scp:
+                scp.put(firmware_path, destination)
+            print(f"Firmware {firmware_path} copied to {destination}.")
+        else:
+            print(f"{firmware_path} already exists on the target device.")
     except Exception as e:
         print(f"Failed to copy firmware: {e}")
 
 def validate_firmware(dev, firmware, expected_md5):
     """Validate the firmware MD5 checksum."""
-    output, error = execute_command(dev, f"file checksum md5 {firmware}")
-    if error:
-        print(f"Error retrieving MD5 checksum: {error}")
-        return False
-    
+    fs = FS(dev)
+        # Get MD5 checksum
+    output = fs.checksum(firmware, algorithm='md5')    
     match = re.search(r'[a-fA-F0-9]{32}', output)
     if match:
         device_md5 = match.group(0)
@@ -77,14 +82,17 @@ def validate_firmware(dev, firmware, expected_md5):
     print("Could not retrieve MD5 checksum.")
     return False
 
-def upgrade_firmware(dev, firmware):
+def upgrade_firmware(dev, firmware_path):
     """Upgrade JunOS firmware using PyEZ SW module."""
     try:
-        print(f"Starting upgrade with {firmware}...")
-        output, error = execute_command(dev, f"request system software add /var/tmp/{firmware} no-validate")
-        print(output)
-        print(f"Upgrade with {firmware} completed. Rebooting...")
-        execute_command(dev, "request system reboot")
+        sw = SW(dev)
+        print("Starting firmware upgrade...")
+        success = sw.install(package=firmware_path, progress=True, validate=True)
+        if success:
+            print("Firmware upgrade completed successfully. Rebooting device...")
+            dev.reboot()
+        else:
+            print("Firmware upgrade failed.")
     except Exception as e:
         print(f"Upgrade error: {e}")
 
@@ -94,6 +102,20 @@ def is_device_reachable(hostname):
     response = subprocess.run(['ping', '-c', '1', '-W', '3', hostname], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     return response.returncode == 0
 
+def extract_text_from_xml(xml_element):
+    """Extracts relevant information from an XML element and formats it as readable text."""
+    if isinstance(xml_element, bool):  # ✅ Handle boolean responses
+        return "Success" if xml_element else "Failed"
+ 
+    output = []
+    for element in xml_element.iter():
+        if element.tag is not None and element.text is not None:
+            tag = element.tag.replace("-", " ").strip()  # Replace hyphens for readability
+            text = element.text.strip()
+            if text:
+                output.append(f"{tag}: {text}")
+ 
+    return "\n".join(output)
 def compare_files(pre_data, post_data):
     """Compare pre-check and post-check data."""
     changes = []
@@ -192,18 +214,24 @@ def main():
 
     # Step 2: Pre-check commands
     pre_check_commands = [
-        "show ethernet-switching table",
-        "show version",
-        "show interfaces terse",
-        "show interfaces descriptions",
-        "show lldp neighbors",
-        "show virtual-chassis"
+        {'description': 'Show version', 'method': 'get_software_information'},
+        {'description': 'Show interfaces terse', 'method': 'get_interface_information', 'args': {'terse': True}},
+        {'description': 'Show LLDP neighbors', 'method': 'get_lldp_neighbors_information'},
+        {'description': 'Show virtual-chassis', 'method': 'get_virtual_chassis_information'},
+        {'description': 'Show interfaces description', 'method': 'get_interface_information', 'args': {'descriptions': True}},
+        {'description': 'Show Ethernet Switching Table', 'method': 'get_ethernet_switching_table_information'}
     ]
     
     pre_check_output = ""
-    for command in pre_check_commands:
-        output, error = execute_command(dev, command)
-        pre_check_output += f"Command: {command}\n{output}\n{'-'*50}\n"
+    for cmd in pre_check_commands:
+        if cmd['method'] == 'cli':
+            output = dev.cli(cmd['args']['command'])  # CLI output as-is
+        else:
+            rpc_method = getattr(dev.rpc, cmd['method'])
+            output = rpc_method(**cmd.get('args', {}))
+
+        text_output = extract_text_from_xml(output)
+        pre_check_output += f"Command: {cmd}\n{text_output}\n{'-'*50}\n"
 
     save_output_to_file("pre_check.txt", pre_check_output)
     print("Pre-checks completed.")
@@ -233,10 +261,15 @@ def main():
 
     # Step 6: Post-checks
     post_check_output = ""
-    for command in pre_check_commands:
-        output, error = execute_command(dev, command)
-        post_check_output += f"Command: {command}\n{output}\n{'-'*50}\n"
+    for cmd in pre_check_commands:
+        if cmd['method'] == 'cli':
+            output = dev.cli(cmd['args']['command'])  # CLI output as-is
+        else:
+            rpc_method = getattr(dev.rpc, cmd['method'])
+            output = rpc_method(**cmd.get('args', {}))
 
+        text_output = extract_text_from_xml(output)
+        post_check_output += f"Command: {cmd}\n{text_output}\n{'-'*50}\n"
     save_output_to_file("post_check.txt", post_check_output)
     print("Post-checks completed.")
 
