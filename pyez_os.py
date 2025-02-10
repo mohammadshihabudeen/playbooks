@@ -2,7 +2,7 @@ import getpass
 import re
 import time
 from jnpr.junos import Device
-from jnpr.junos.utils.fs import FileSystem
+from jnpr.junos.utils.fs import FS
 from jnpr.junos.utils.sw import SW
 from jnpr.junos.exception import ConnectError
 
@@ -53,8 +53,8 @@ def save_output_to_file(filename, output):
 def copy_firmware(dev, firmware_path, destination):
     """Copy firmware to the device using PyEZ FileSystem."""
     try:
-        fs = FileSystem(dev)
-        fs.put(firmware_path, destination)
+        fs = FS(dev)
+        fs.cp(firmware_path, destination)
         print(f"Firmware {firmware_path} copied to {destination}.")
     except Exception as e:
         print(f"Failed to copy firmware: {e}")
