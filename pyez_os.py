@@ -21,7 +21,7 @@ def establish_ssh_connection(hostname, username, password):
 def execute_command(dev, command):
     """Execute a CLI command on the device and return output."""
     try:
-        output = dev.cli(command, format="text")
+        output = dev.cli(command, format="text",warning = False)
         return output, None
     except Exception as e:
         return None, str(e)
@@ -77,17 +77,14 @@ def validate_firmware(dev, firmware, expected_md5):
     print("Could not retrieve MD5 checksum.")
     return False
 
-def upgrade_firmware(dev, firmware_path):
+def upgrade_firmware(dev, firmware):
     """Upgrade JunOS firmware using PyEZ SW module."""
     try:
-        sw = SW(dev)
-        print("Starting firmware upgrade...")
-        success = sw.install(package=firmware_path, progress=True, validate=True)
-        if success:
-            print("Firmware upgrade completed successfully. Rebooting device...")
-            dev.reboot()
-        else:
-            print("Firmware upgrade failed.")
+        print(f"Starting upgrade with {firmware}...")
+        output, error = execute_command(dev, f"request system software add /var/tmp/{firmware} no-validate")
+        print(output)
+        print(f"Upgrade with {firmware} completed. Rebooting...")
+        execute_command(dev, "request system reboot")
     except Exception as e:
         print(f"Upgrade error: {e}")
 
