@@ -125,11 +125,11 @@ def upgrade_firmware(dev, firmware_path):
         sw = SW(dev)
         print("Starting firmware upgrade...")
 
-        success = sw.install(package=firmware_path, progress=True, validate=False, force_copy=True)
+        success = sw.install(package=firmware_path, progress=print, validate=False,force_copy= True)
 
         if success:
             print("Firmware upgrade completed successfully. Rebooting device...")
-            sw.reboot()
+            #sw.reboot()
         else:
             print("Firmware upgrade failed.")
             return False
@@ -265,7 +265,6 @@ def main():
     uplink_candidates = [intf for intf, details in interfaces_status.items() if details["is_uplink"]]
     active_uplinks = [intf for intf in uplink_candidates if (interfaces_status[intf]["admin_up"] and interfaces_status[intf]["link_up"])]
 
-    print(interfaces_status)
     print(f"Total links: {len(interfaces_status)}")
     print(f"Uplink Candidates: {len(uplink_candidates)}")
     print(f"Active uplinks: {len(active_uplinks)}")
