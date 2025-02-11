@@ -83,7 +83,7 @@ def copy_firmware(dev, firmware_path, destination):
     try:
         fs = FS(dev)
         print(f"Checking if {firmware_path} exists on the target device...")
-        file_info = fs.ls(firmware_path)
+        file_info = fs.ls(f"/var/tmp/{firmware_path}")
 
         if not file_info:  # If file does not exist
             print(f"{firmware_path} not found on the target device. Copying it from the corpjump server...")
