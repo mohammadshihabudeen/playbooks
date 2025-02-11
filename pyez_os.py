@@ -53,17 +53,24 @@ def parse_interfaces_descriptions(output, regex_pattern):
     
     return interfaces
 
-def checks(dev,check_commands):
+def checks(dev, check_commands):
     check_output = ""
     for cmd in check_commands:
-        if cmd['method'] == 'cli':
-            output = dev.cli(cmd['args']['command'])  # CLI output as-is
-        else:
-            rpc_method = getattr(dev.rpc, cmd['method'])
-            output = rpc_method(**cmd.get('args', {}))
+        try:
+            if cmd['method'] == 'cli':
+                output = dev.cli(cmd['args']['command'])
+            else:
+                rpc_method = getattr(dev.rpc, cmd['method'])
+                output = rpc_method(**cmd.get('args', {}))
 
-        text_output = extract_text_from_xml(output)
-        check_output += f"Command: {cmd['description']}\n{text_output}\n{'-'*50}\n" 
+            if output is None:
+                text_output = "No data available"
+            else:
+                text_output = extract_text_from_xml(output)
+
+            check_output += f"Command: {cmd['description']}\n{text_output}\n{'-'*50}\n"
+        except Exception as e:
+            check_output += f"Error executing {cmd['description']}: {e}\n{'-'*50}\n"
     return check_output
 
 def save_output_to_file(filename, output):
@@ -74,18 +81,27 @@ def save_output_to_file(filename, output):
 def copy_firmware(dev, firmware_path, destination):
     """Copy firmware to the device using PyEZ FileSystem."""
     try:
-        fs = FS(dev)  # Initialize the filesystem utility
+        fs = FS(dev)
         print(f"Checking if {firmware_path} exists on the target device...")
         file_info = fs.ls(firmware_path)
+
         if not file_info:  # If file does not exist
             print(f"{firmware_path} not found on the target device. Copying it from the corpjump server...")
-            with SCP(dev, progress=True) as scp:
-                scp.put(firmware_path, destination)
-            print(f"Firmware {firmware_path} copied to {destination}.")
+
+            try:
+                with SCP(dev, progress=True) as scp:
+                    scp.put(firmware_path, destination)
+                print(f"Firmware {firmware_path} copied to {destination}.")
+            except Exception as scp_error:
+                print(f"SCP copy failed: {scp_error}")
+                return False
         else:
             print(f"{firmware_path} already exists on the target device.")
+        
+        return True  # Indicate success
     except Exception as e:
-        print(f"\n Failed to copy firmware: {e}")
+        print(f"Failed to copy firmware: {e}")
+        return False
 
 def validate_firmware(dev, firmware, expected_md5):
     """Validate the firmware MD5 checksum."""
@@ -108,14 +124,20 @@ def upgrade_firmware(dev, firmware_path):
     try:
         sw = SW(dev)
         print("Starting firmware upgrade...")
-        success = sw.install(package=firmware_path, progress=True, validate=False,force=True)
+
+        success = sw.install(package=firmware_path, progress=True, validate=False, force_copy=True)
+
         if success:
             print("Firmware upgrade completed successfully. Rebooting device...")
             sw.reboot()
         else:
             print("Firmware upgrade failed.")
+            return False
     except Exception as e:
         print(f"Upgrade error: {e}")
+        return False
+
+    return True  # Indicate success
 
 def is_device_reachable(hostname):
     """Ping the device to check if it's reachable."""
@@ -222,7 +244,12 @@ def main():
 
     #version check if same
     os_match = re.search(os_version_regex, firmware_path)
-    if not validate_junos_os(dev,os_match.group(1)):
+    if not os_match:
+        print("Error: Unable to extract Junos OS version from the firmware filename.")
+        dev.close()
+        return
+
+    if validate_junos_os(dev, os_match.group(1)):  # Validate OS version
         print("Exiting. Resolve issues before retrying.")
         dev.close()
         return
