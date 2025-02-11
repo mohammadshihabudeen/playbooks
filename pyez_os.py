@@ -225,8 +225,12 @@ def main():
     username = input("Enter your username: ")
     password = getpass.getpass("Enter your password: ")
     target_device = input("Enter switch hostname: ")
-    firmware_path = input("Enter firmware path: ").strip()
-    expected_md5 = input(f"Enter expected MD5 checksum for {firmware_path}: ")
+    firmware_list = input("Enter firmware list (comma-separated): ").split(',')
+    firmware_md5 = {}
+    for firmware in firmware_list:
+        firmware = firmware.strip()
+        md5_value = input(f"Enter the expected MD5 checksum for {firmware}: ")
+        firmware_md5[firmware] = md5_value
     os_version_regex=r'-([12]\d.+)\.'
     uplink_regex = r"corp-cr"
     check_commands = [
@@ -243,7 +247,7 @@ def main():
         return
 
     #version check if same
-    os_match = re.search(os_version_regex, firmware_path)
+    os_match = re.search(os_version_regex, list(firmware_md5.keys())[0])
     if not os_match:
         print("Error: Unable to extract Junos OS version from the firmware filename.")
         dev.close()
@@ -276,28 +280,29 @@ def main():
     save_output_to_file("pre_check.txt", pre_check_output)
     print("Pre-checks completed.")
 
-    # Step 3: Copy and validate firmware
-    copy_firmware(dev, firmware_path, "/var/tmp/")
-    if not validate_firmware(dev, f"/var/tmp/{firmware_path}", expected_md5):
-        print("Firmware validation failed. Exiting.")
-        dev.close()
-        return
+    for firmware_path, expected_md5 in firmware_md5.items():
+        # Step 3: Copy and validate firmware
+        copy_firmware(dev, firmware_path, "/var/tmp/")
+        if not validate_firmware(dev, f"/var/tmp/{firmware_path}", expected_md5):
+            print("Firmware validation failed. Exiting.")
+            dev.close()
+            return
 
-    # Step 4: Upgrade firmware
-    upgrade_firmware(dev, f"/var/tmp/{firmware_path}")
+        # Step 4: Upgrade firmware
+        upgrade_firmware(dev, f"/var/tmp/{firmware_path}")
 
-    # Step 5: Wait for device to reboot
-    print("Waiting for device to come online...")
-    time.sleep(300)
-    while not is_device_reachable(target_device):
-        print("Device is not reachable. Retrying in 30 seconds...")
-        time.sleep(30)
+        # Step 5: Wait for device to reboot
+        print("Waiting for device to come online...")
+        time.sleep(300)
+        while not is_device_reachable(target_device):
+            print("Device is not reachable. Retrying in 30 seconds...")
+            time.sleep(30)
 
-    print("Device is back online. Reconnecting...")
-    dev = establish_ssh_connection(target_device, username, password)
-    if not dev:
-        print("Reconnection failed. Exiting.")
-        return
+        print("Device is back online. Reconnecting...")
+        dev = establish_ssh_connection(target_device, username, password)
+        if not dev:
+            print("Reconnection failed. Exiting.")
+            return
 
     # Step 6: Post-checks
     post_check_output = checks(dev,check_commands)
