@@ -141,10 +141,8 @@ def upgrade_firmware(dev, firmware_path):
  
         print("Starting firmware upgrade...")
         # Perform os upgrade
-        result = sw.install(package=firmware_path,
-                                                no_copy=True,
-                                                            validate=False,          # Since the package is already on the device
-                                                             )
+        result = sw.install(package=firmware_path,no_copy=True, validate=False)         # Since the package is already on the device
+                                    
         # Check installation result
         if result:
             print("Firmware install was successful.\nThe system is going to Reboot")      
