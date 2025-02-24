@@ -29,8 +29,8 @@ def validate_junos_os(dev,extracted_os):
         current_os = facts.get("version")  
         if current_os in extracted_os:
             print(f"Junos is already updated  {current_os}")
-            return True
-        return False
+            return False
+        return True
     except Exception as e:
         print(f"Error fetching current os: {e}")
         return False
@@ -234,6 +234,7 @@ def main():
  
     dev = establish_ssh_connection(target_device, username, password)
     if not dev:
+        print("Connection failed. Exiting.")
         return
  
     #version check if same
@@ -243,7 +244,7 @@ def main():
         dev.close()
         return
  
-    if validate_junos_os(dev, os_match.group(1)):  # Validate OS version
+    if not validate_junos_os(dev, os_match.group(1)):  # Validate OS version
         print("Existing OS. Exiting from the host.")
         dev.close()
         return
@@ -270,7 +271,10 @@ def main():
  
     for firmware_path, expected_md5 in firmware_md5.items():
         # Step 3: Copy and validate firmware
-        copy_firmware(dev, firmware_path, "/var/tmp/")
+        if not copy_firmware(dev, firmware_path, "/var/tmp/"):
+            print("Error copying firmware. Exiting.")
+            dev.close()
+            return
         dev.close()
         dev.open()
         if not validate_firmware(dev, f"/var/tmp/{firmware_path}", expected_md5):
@@ -279,8 +283,11 @@ def main():
             return
  
         # Step 4: Upgrade firmware
-        upgrade_firmware(dev, f"/var/tmp/{firmware_path}")
- 
+        if not upgrade_firmware(dev, f"/var/tmp/{firmware_path}"):
+            print("Firmware upgrade failed. Exiting.")
+            dev.close()
+            return 
+        
         # Step 5: Wait for device to reboot
         print("Waiting for device to come online...")
         time.sleep(300)
