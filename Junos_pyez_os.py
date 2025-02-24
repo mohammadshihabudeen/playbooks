@@ -297,7 +297,7 @@ def main():
  
     # Step 7: Compare pre-check and post-check
     changes = compare_files(pre_check_output,post_check_output,check_commands)
-    save_output_to_file(changes, "version_comparison.txt")
+    save_output_to_file("version_comparison.txt",changes)
  
     print("Upgrade process completed successfully.")
  
