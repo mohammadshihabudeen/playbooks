@@ -45,16 +45,6 @@ def parse_interfaces_descriptions(output, regex_pattern):
         if line.startswith("name:"):
             current_interface = line.split(": ")[-1].strip()
             interfaces[current_interface] = {}
-        # elif "admin status:" in line:
-        #     if  line.split(": ")[-1].strip().lower() == "up":
-        #         interfaces[current_interface]["admin_up"] = line.split(": ")[-1].strip().lower() == "up"
-        #     else:
-        #         interfaces[current_interface]["admin_up"] = False
-        # elif "oper status:" in line:
-        #     if line.split(": ")[-1].strip().lower() == "up":
-        #         interfaces[current_interface]["link_up"] = line.split(": ")[-1].strip().lower() == "up"
-        #     else:
-        #         interfaces[current_interface]["link_up"] = False
         elif "admin status:" in line or "oper status:" in line:
             status = line.split(": ")[-1].strip().lower()
             key = "admin_up" if "admin status:" in line else "link_up"
@@ -118,11 +108,9 @@ def validate_firmware(dev, firmware, expected_md5):
     """Validate the firmware MD5 checksum."""
     try:
         fs = FS(dev)
-            # Get MD5 checksum
-        output = fs.checksum(firmware, calc='md5')    
-        match = re.search(r'[a-fA-F0-9]{32}', output)
-        if match:
-            device_md5 = match.group(0)
+        # Get MD5 checksum
+        device_md5 = fs.checksum(firmware, calc='md5')    
+        if device_md5:
             if device_md5 != expected_md5:
                 print(f"MD5 mismatch! Expected: {expected_md5}, Found: {device_md5}")
                 return False
